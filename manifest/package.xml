@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Package xmlns="http://soap.sforce.com/2006/04/metadata">
+    <types>
+        <members>*</members>
+        <name>CustomObject</name>
+    </types>
+    <types>
+        <members>*</members>
+        <name>PermissionSet</name>
+    </types>
+    <types>
+        <members>*</members>
+        <name>CustomTab</name>
+    </types>
+    <types>
+        <members>*</members>
+        <name>CustomApplication</name> <!-- Retrieves your App -->
+    </types>
+    <types>
+        <members>*</members>
+        <name>FlexiPage</name> <!-- Retrieves your FlexiPages -->
+    </types>
+    <types>
+        <members>*</members>
+        <name>ContentAsset</name> <!-- Retrieves the Logo -->
+    </types>
+    <version>59.0</version> <!-- Adjust based on your org's API version -->
+</Package>
