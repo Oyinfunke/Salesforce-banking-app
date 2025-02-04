@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Lead_Status__c</fullName>
+    <label>Lead Status</label>
+    <type>Picklist</type>
+    <valueSet>
+    <valueSetDefinition>
+        <value>
+            <fullName>New</fullName>
+            <default>true</default>
+        </value>
+        <value>
+            <fullName>Contacted</fullName>
+        </value>
+        <value>
+            <fullName>Interested</fullName>
+        </value>
+        <value>
+            <fullName>Not Interested</fullName>
+        </value>
+        <value>
+            <fullName>Converted</fullName>
+        </value>
+        </valueSetDefinition>
+    </valueSet>
+</CustomField>
