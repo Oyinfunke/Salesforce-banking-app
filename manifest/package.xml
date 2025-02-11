@@ -22,6 +22,10 @@
     </types>
     <types>
         <members>*</members>
+        <name>Layout</name> <!-- Retrieves Layouts -->
+    </types>
+    <types>
+        <members>*</members>
         <name>ContentAsset</name> <!-- Retrieves the Logo -->
     </types>
     <version>59.0</version> <!-- Adjust based on your org's API version -->

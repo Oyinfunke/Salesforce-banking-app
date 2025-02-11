@@ -25,6 +25,7 @@
     <tabs>Payment__c</tabs>
     <tabs>Transaction__c</tabs>
     <tabs>Balance__c</tabs>
+    <tabs>Prospect__c</tabs>
     <uiType>Lightning</uiType>
     <utilityBar>SoftCode_Bank_App_UtilityBar</utilityBar>
 </CustomApplication>
