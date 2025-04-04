@@ -1,0 +1,5 @@
+
+
+TransactionArchive batchJob = new TransactionArchive();
+
+Database.executebatch(batchJob, 200);
