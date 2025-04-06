@@ -47,7 +47,7 @@ public class ProspectRecUpdate {
      
            
            List<Prospect__c> prospectsList = [
-               SELECT Id, Name, Email__c
+               SELECT Id, Name, Email__c, Prospect_Name__c
                FROM Prospect__c
                WHERE Email__c IN :emailMap.keySet()];
         
