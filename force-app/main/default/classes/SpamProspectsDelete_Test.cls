@@ -31,9 +31,10 @@ public with sharing class SpamProspectsDelete_Test {
 
         if(deletedProsRecs.isEmpty()){
             System.debug('All Prospect with Referral as Source has been deleted');
+            //Assert
+            Assert.areEqual(0, deletedProsRecs.size(),'No Prospectrecord should be returned');
         }
 
-        //Assert
-        Assert.areEqual(0, deletedProsRecs.size(),'No Prospectrecord should be returned');
+        
     }
 }
