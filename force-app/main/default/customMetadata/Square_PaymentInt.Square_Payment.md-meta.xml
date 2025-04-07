@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomMetadata xmlns="http://soap.sforce.com/2006/04/metadata" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+    <label>Square Payment</label>
+    <protected>false</protected>
+    <values>
+        <field>Access_Token__c</field>
+        <value xsi:type="xsd:string">EAAAl1fUNqMPxi5lVLYJhww6pp6EAv-KFyFI1WC9POiwky1irQn9bSYHzq_8lMpi</value>
+    </values>
+    <values>
+        <field>baseUrl__c</field>
+        <value xsi:type="xsd:string">https://connect.squareup.com</value>
+    </values>
+</CustomMetadata>

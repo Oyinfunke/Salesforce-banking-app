@@ -1,4 +1,4 @@
-public with sharing class ProspectSOSLSearch {
+public class ProspectSOSLSearch {
     
     public static void handleProspectSOSLSearch(String searchKey){
 
