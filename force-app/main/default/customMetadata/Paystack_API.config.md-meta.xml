@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomMetadata xmlns="http://soap.sforce.com/2006/04/metadata" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+    <label>config</label>
+    <protected>false</protected>
+    <values>
+        <field>Access_Token__c</field>
+        <value xsi:type="xsd:string">sk_test_742c869205afeba529d8cffc790c29aece8c82ab</value>
+    </values>
+    <values>
+        <field>baseUrl__c</field>
+        <value xsi:type="xsd:string">https://api.paystack.co</value>
+    </values>
+</CustomMetadata>
