@@ -1,230 +1,290 @@
 public class SquareBankAppInt implements Queueable, Database.AllowsCallouts {
-
-    private Boolean updateSquare;
-    private Boolean updateSF;
-    Map<Id,SObject> custRetrievedFromOrgMap = new Map<Id,SObject>();
-
-     public SquareBankAppInt(Boolean updateSq, Boolean updateSF){
-        this.updateSquare = updateSq;
+    
+    // Operation flags
+    private final Boolean updateSquare;
+    private final Boolean updateSF;
+    
+    // Constructor with parameters
+    public SquareBankAppInt(Boolean updateSquare, Boolean updateSF) {
+        this.updateSquare = updateSquare;
         this.updateSF = updateSF;
-
     }
-
-    //Default constructor that performs both operation simultaneously
-    public SquareBankAppInt (){
-        this(true, true);
+    
+    // Default constructor performs both operations in sequence
+    public SquareBankAppInt() {
+        this(true, false); // Only do Square updates first
     }
-
-
-    public void execute(QueueableContext qc){
-
-        //POST/update customer records on square and update SF records subsequently
-        updateSqCustIdInSF();
-
-        //GET customer recods from Square and update SF records
-        makeGetCalloutToSq();
+    
+    // Queueable execute method
+    public void execute(QueueableContext qc) {
+        if (updateSquare) {
+            // Process Square updates and chain to SF updates if needed
+            processSquareUpdates();
+        } else if (updateSF) {
+            // Process SF updates only
+            processSalesforceUpdates();
+        }
     }
-
-    private List<Customer__c> fetchCustRecFromOrg (){
+    
+    private void processSquareUpdates() {
+        List<Customer__c> customers = fetchCustomersWithoutSquareId();
+        if (customers.isEmpty()) {
+            System.debug('No customers to update in Square');
+            
+            // If we need to update SF too, chain the next job
+            if (!updateSF) {
+                System.enqueueJob(new SquareBankAppInt(false, true));
+            }
+            return;
+        }
+        
+        SquareApiConfig config = getSquareApiConfig();
+        if (config == null) {
+            // Chain to next job if needed
+            if (!updateSF) {
+                System.enqueueJob(new SquareBankAppInt(false, true));
+            }
+            return;
+        }
+        
+        List<Customer__c> customersToUpdate = new List<Customer__c>();
+        
+        for (Customer__c customer : customers) {
+            if (!isValidCustomer(customer)) continue;
+            
+            String squareCustomerId = createCustomerInSquare(customer, config);
+            if (String.isNotBlank(squareCustomerId)) {
+                Customer__c customerToUpdate = new Customer__c(
+                    Id = customer.Id,
+                    Square_Customer_ID__c = squareCustomerId
+                );
+                customersToUpdate.add(customerToUpdate);
+            }
+        }
+        
+        // Now perform all the updates at once, after all callouts
+        if (!customersToUpdate.isEmpty()) {
+            updateCustomersWithSquareIds(customersToUpdate);
+        }
+        
+        // Chain to SF updates if needed
+        if (!updateSF) {
+            System.enqueueJob(new SquareBankAppInt(false, true));
+        }
+    }
+    
+    private void processSalesforceUpdates() {
+        SquareApiConfig config = getSquareApiConfig();
+        if (config == null) return;
+        
+        List<Customer__c> customersToUpdate = fetchCustomersFromSquare(config);
+        if (!customersToUpdate.isEmpty()) {
+            updateCustomerRecords(customersToUpdate);
+        }
+    }
+    
+    // SECTION 1: Square Customer Update Methods
+    private List<Customer__c> fetchCustomersWithoutSquareId() {
         return [
             SELECT Id, First_Name__c, Last_Name__c, Email__c, Phone_Number__c
             FROM Customer__c
             WHERE Square_Customer_ID__c = null
-
+            LIMIT 100  // Limiting for better handling of large data volumes
         ];
     }
     
+    private Boolean isValidCustomer(Customer__c customer) {
+        if (customer.Email__c == null || !customer.Email__c.contains('@')) {
+            System.debug(customer.First_Name__c + ' ' + customer.Last_Name__c + 
+                         ' record does not contain a valid email. This record is skipped.');
+            return false;
+        }
+        return true;
+    }
     
-    private List<Square_PaymentInt__mdt> fetchSquareAPI(){
-        List<Square_PaymentInt__mdt> config = [
-                                                SELECT Access_Token__c, baseUrl__c
-                                                FROM Square_PaymentInt__mdt
-                                                LIMIT 1
-                            ];
-
-        if(config.isEmpty()){
-            System.debug('Could not fetch Square API from org\'s metadata');
-            return;
-        }
-        return config;
-    }
-
-    private String buildCustReqBodyForCallout(){
-        List<Customer__c> custToUpdateOnSq = fetchCustRecFromOrg();
-        if(custToUpdateOnSq.isEmpty()){
-            System.debug('No Customer records to update on Square app');
-            return;
-        }else {
-            //validate customer's email
-            for(Customer__c cust : custToUpdateOnSq){
-                if(cust.Email__c =null || !cust.Email__c.contains('@')){
-                    System.debug(cust.Name + ' record does not contain a valid email. Therefore this record is skipped');
-                    continue;
+    private String createCustomerInSquare(Customer__c customer, SquareApiConfig config) {
+        Map<String, Object> requestBody = new Map<String, Object>{
+            'given_name' => customer.First_Name__c,
+            'family_name' => customer.Last_Name__c,
+            'email_address' => customer.Email__c,
+            'phone_number' => customer.Phone_Number__c
+        };
+        
+        String endpoint = config.baseUrl + '/v2/customers';
+        String authHeader = 'Bearer ' + config.accessToken;
+        
+        try {
+            Http http = new Http();
+            HttpRequest request = new HttpRequest();
+            request.setEndpoint(endpoint);
+            request.setMethod('POST');
+            request.setHeader('Authorization', authHeader);
+            request.setHeader('Content-Type', 'application/json');
+            request.setBody(JSON.serialize(requestBody));
+            
+            HttpResponse response = http.send(request);
+            
+            if (response.getStatusCode() == 200) {
+                System.debug('Successfully created Customer record on Square');
+                Map<String, Object> responseMap = (Map<String, Object>)JSON.deserializeUntyped(response.getBody());
+                
+                if (responseMap.containsKey('customer')) {
+                    Map<String, Object> customerMap = (Map<String, Object>)responseMap.get('customer');
+                    return String.valueOf(customerMap.get('id'));
                 }
-                custRetrievedFromOrgMap.put(cust.Id, cust);
-
-                Map<String,Object>  reqBodyMap = new Map<String,Object>{
-                    'given_name' => cust.First_Name__c,
-                    'family_name'=> cust.Last_Name__c,
-                    'email_address' => cust.Email__c,
-                    'phone_number' => cust.Phone_Number__c
-                };
-
-                String reqBody = JSON.serialize(reqBodyMap);
-
-                return reqBody;
+            } else {
+                System.debug('Error from Square. Status Code: ' + response.getStatusCode() + 
+                             ' Error message: ' + response.getBody());
             }
+        } catch (Exception e) {
+            System.debug('Exception: ' + e.getMessage());
         }
-
+        
+        return null;
     }
-
-    private String getSqCustIdFromPostCallout(){
-        String reqBody = buildCustReqBodyForCallout();
-        List<Square_PaymentInt__mdt> config =fetchSquareAPI();
-        String sqCustId = new String();
-
-        String postEndPoint = config[0].baseUrl__c + '/v2/customers';
-        String authHeader = 'Bearer ' + config[0].Access_Token__c;
-
-       try {
-        
-         //create HttpRequest to Square
-         HTTP http = new HTTP();
-         HttpRequest req = new HttpRequest();
-         req.setEndpoint(postEndPoint);
-         req.setMethod('POST');
-         req.setHeader('Authorization', authHeader);
-         req.setHeader('Content-Type', 'application/json');
-         req.setBody(reqBody);
- 
-         HttpResponse res = http.send(req);
- 
-         if(res.getStatusCode()==200){
-             System.debug('Successfully created Customer record on Square');
- 
-             //parse JSON body
-             Map<String,Object> resBodyMap = (Map<String, Object>) JSON.deserializeUntyped(res.getBody());
-             
-             if(resBodyMap.containsKey('customer')){
-                 Map<String,Object> customerMap = (Map<String, Object>) resBodyMap.get('customer');
- 
-                sqCustId = String.valueOf(customerMap.get('id'));
-             }
- 
-         }else {
-             System.debug('Error from Square. status Code: ' + res.getStatusCode() + 'Error message: ' = res.getBody());
-         }
-
-
-       } catch (Exception e) {
-
-        System.debug('Exception; ' + e.getMessage() + 'Stack ' + e.getStackTraceString());
-        
-       }
-        return sqCustId;
-    }
-
-    private void updateSqCustIdInSF(Map<Id,SObject> custRetrievedFromOrgMap){
-        String sqCustId = getSqCustIdFromPostCallout();
-        List<Customer__c> custRecToUpdateInSF = new List<Customer__c>();
-
-       try {
-        
-         //check if id is not blank
-         if(String.isNotBlank(sqCustId)){
-            for(Customer__c c : custRetrievedFromOrgMap.get(id)){
-                c.Square_Customer_ID__c = sqCustId;
-                custRecToUpdateInSF.add(c);
-            }
-
-            if(!custRecToUpdateInSF.isEmpty()){
-                Database.SaveResult[] results = Database.update(custRecToUpdateInSF, false);
-                for(Database.SaveResult result : results){
-                    if(result.isSuccess()){
-                        System.debug('Successfully updated customer record.');
-
-                    }else {
-                        System.debug('Could not update customer record. Error: ' + result.getErrors());
+    
+    private void updateCustomersWithSquareIds(List<Customer__c> customersToUpdate) {
+        try {
+            Database.SaveResult[] results = Database.update(customersToUpdate, false);
+            Integer successCount = 0;
+            
+            for (Database.SaveResult result : results) {
+                if (result.isSuccess()) {
+                    successCount++;
+                } else {
+                    for (Database.Error error : result.getErrors()) {
+                        System.debug('Error updating customer: ' + error.getMessage());
                     }
                 }
             }
-
-        }else {
-            System.debug('Could not retrieve Customer Id from square');
+            
+            System.debug('Successfully updated ' + successCount + ' customers with Square IDs');
+        } catch (Exception e) {
+            System.debug('Exception updating customers: ' + e.getMessage());
         }
-
-       } catch (Exception e) {
-        System.debug('Exception: ' + e.getMessage() + 'Stack: ' + e.getStackTraceString());
-       }
     }
-
-    /**
-     * Psedocode to retrieve recs from square and update SF
-     * 1. Make GET callout to Square via API
-     *   - parse response and extract all data to be updated to Sf
-     * 2. update SF records
-     */
-
-     private void makeGetCalloutToSq(){
-        List<Square_PaymentInt__mdt> config = fetchSquareAPI();
-        String getEndpoint = config[0].baseUrl__c + '/v2/customers';
-        String authHeader = 'Bearer ' + config[0].Access_Token__c;
-
-       try {
     
-        Http http = new Http();
-        HttpRequest req = new HttpRequest();
-
-        req.setEndpoint(getEndpoint);
-        req.setMethod('GET');
-        req.setHeader('Authorization', authHeader);
-        req.setHeader('Content-Type', 'application/json');
-
-        HttpResponse res = http.send(req);
-
-        if(res.getStatusCode()==200){
-            //parse response body
-            List<Map<String,Object>> resBody = (List<Map<String,Object>>) JSON.deserializeUntyped(res.getBody());
-            if(!resBody.contains('customers')){
-                System.debug('No Customer to fetch from Square'); 
-            }
-
-            List<Map<String,Object>> customers = (List<Map<String,Object>>) resBody.get('customer');
-
-            if(!customer.isEmpty()){
-
-                 List<Customer__c> custRecToUpdate = new List<Customer__c>();
-                for(Map<String,Object> customer : customers){
-                    String sqCustId = String.valueOf(customer.get('id'));
-                    String firstName = String.valueOf(customer.get('given_name'));
-                    String lastName = String.valueOf(customer.get('family_name'));
-                    String email = String.valueof(customer.get('email_address'));
-
-                    custRecToUpdate.add(customer);
-                }
-                if(!custRecToUpdate.isEmpty()){
-                    Database.SaveResult[] results = Database.update(custRecToUpdate, false);
-
-                    for(Database.SaveResult result : results){
-                        if(result.isSuccess()){
-                            System.debug('Successfully updated ' + results.size() + 'customer records from Square');
-                        }else {
-                            System.debug('Could not update customer record. Error: ' + result.getErrors());
+    // SECTION 2: Salesforce Customer Update Methods
+    private List<Customer__c> fetchCustomersFromSquare(SquareApiConfig config) {
+        List<Customer__c> customersToUpdate = new List<Customer__c>();
+        String endpoint = config.baseUrl + '/v2/customers';
+        String authHeader = 'Bearer ' + config.accessToken;
+        
+        try {
+            Http http = new Http();
+            HttpRequest request = new HttpRequest();
+            request.setEndpoint(endpoint);
+            request.setMethod('GET');
+            request.setHeader('Authorization', authHeader);
+            request.setHeader('Content-Type', 'application/json');
+            
+            HttpResponse response = http.send(request);
+            
+            if (response.getStatusCode() == 200) {
+                Map<String, Object> responseMap = (Map<String, Object>)JSON.deserializeUntyped(response.getBody());
+                
+                if (responseMap.containsKey('customers')) {
+                    List<Object> customers = (List<Object>)responseMap.get('customers');
+                    
+                    // Prepare a map to efficiently look up Salesforce Ids by Square Ids
+                    Set<String> squareIds = new Set<String>();
+                    for (Object obj : customers) {
+                        Map<String, Object> customer = (Map<String, Object>)obj;
+                        squareIds.add(String.valueOf(customer.get('id')));
+                    }
+                    
+                    // Query all matching customers in one go
+                    Map<String, Id> squareIdToSFId = new Map<String, Id>();
+                    for (Customer__c c : [SELECT Id, Square_Customer_ID__c FROM Customer__c 
+                                         WHERE Square_Customer_ID__c IN :squareIds]) {
+                        squareIdToSFId.put(c.Square_Customer_ID__c, c.Id);
+                    }
+                    
+                    // Now process the Square customer data
+                    for (Object obj : customers) {
+                        Map<String, Object> customer = (Map<String, Object>)obj;
+                        String squareId = String.valueOf(customer.get('id'));
+                        
+                        if (squareIdToSFId.containsKey(squareId)) {
+                            Id sfId = squareIdToSFId.get(squareId);
+                            Customer__c customerToUpdate = new Customer__c(Id = sfId);
+                            
+                            // Only set fields that exist in the Square data
+                            if (customer.containsKey('given_name')) {
+                                customerToUpdate.First_Name__c = String.valueOf(customer.get('given_name'));
+                            }
+                            if (customer.containsKey('family_name')) {
+                                customerToUpdate.Last_Name__c = String.valueOf(customer.get('family_name'));
+                            }
+                            if (customer.containsKey('email_address')) {
+                                customerToUpdate.Email__c = String.valueOf(customer.get('email_address'));
+                            }
+                            if (customer.containsKey('phone_number')) {
+                                customerToUpdate.Phone_Number__c = String.valueOf(customer.get('phone_number'));
+                            }
+                            
+                            customersToUpdate.add(customerToUpdate);
                         }
                     }
+                } else {
+                    System.debug('No customers found in Square response');
+                }
+            } else {
+                System.debug('Error from Square: ' + response.getStatusCode() + ' ' + response.getBody());
+            }
+        } catch (Exception e) {
+            System.debug('Exception: ' + e.getMessage());
+        }
+        
+        return customersToUpdate;
+    }
+    
+    private void updateCustomerRecords(List<Customer__c> customers) {
+        try {
+            Database.SaveResult[] results = Database.update(customers, false);
+            
+            Integer successCount = 0;
+            for (Database.SaveResult result : results) {
+                if (result.isSuccess()) {
+                    successCount++;
+                } else {
+                    for (Database.Error error : result.getErrors()) {
+                        System.debug('Error updating customer: ' + error.getMessage());
+                    }
                 }
             }
-        }else {
-            System.debug('Error from Square: ' + res.getStatusCode() + res.getBody());
+            
+            System.debug('Successfully updated ' + successCount + ' customer records from Square');
+        } catch (Exception e) {
+            System.debug('Exception updating customers: ' + e.getMessage());
         }
-
-
-       } catch (Exception e) {
-        System.debug('Exception: ' + e.getMessage() + 'Stack: ' + e.getStackTraceString());
-        
-       }
-
-     }
-
+    }
     
+    // SECTION 3: Utility methods
+    private SquareApiConfig getSquareApiConfig() {
+        List<Square_PaymentInt__mdt> configList = [
+            SELECT Access_Token__c, baseUrl__c
+            FROM Square_PaymentInt__mdt
+            LIMIT 1
+        ];
+        
+        if (configList.isEmpty()) {
+            System.debug('Could not fetch Square API from org\'s metadata');
+            return null;
+        }
+        
+        Square_PaymentInt__mdt config = configList[0];
+        return new SquareApiConfig(config.Access_Token__c, config.baseUrl__c);
+    }
+    
+    // Inner class to simplify passing API configuration
+    private class SquareApiConfig {
+        public String accessToken;
+        public String baseUrl;
+        
+        public SquareApiConfig(String accessToken, String baseUrl) {
+            this.accessToken = accessToken;
+            this.baseUrl = baseUrl;
+        }
+    }
 }
