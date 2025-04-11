@@ -1,34 +1,60 @@
 @isTest
 public class ProspectSOSLSearch_Test {
-    
-    @TestSetup
-    static void testData(String searchKey){
 
-        //create prospect records
-        List<Prospect__c> prosRecs = new List<Prospect__c>();
+    @isTest 
+    static void testHandleProspectSOSLSearch_WithResult(){
+        //set up test data
+        Prospect__c testProspect = new Prospect__c();
+        testProspect.Prospect_Name__c = 'Test Prospect';
+        testProspect.Company_Name__c = 'Test Company';
+        testProspect.Email__c = 'test@example.com';
+        testProspect.Prospect_Source__c = 'Website';
+        testProspect.Prospect_Status__c = 'New';
 
-        for(Integer i=0; i<10; i++){
-            prosRecs.add(new  Prospect__c(
-                Prospect_Name__c = searchKey + i,
-                Email__c = searchKey + '_' + i + '@softcode.com',
-                Business_Development_Executive__c = 'Victor Alabi',
-                Company_Name__c = 'Softcode',
-                Contact_Number__c = '+44764829062',
-                Prospect_Source__c = 'Referral',
-                Prospect_Status__c = ''
-            ));
-        }
-        insert prosRecs;
-        
-    }
-    //test method
-    @isTest
-    static void testProspectSOSLSearch(String searchKey){
+        insert testProspect;
+
+        //set fixed search result
+        Id [] fixedSearchResults = new Id[1];
+        fixedSearchResults[0] = testProspect.Id;
+        Test.setFixedSearchResults(fixedSearchResults);
+
+        //start test
         Test.startTest();
-        ProspectSOSLSearch.handleProspectSOSLSearch();
+        ProspectSOSLSearch.handleProspectSOSLSearch('Test');
+        Test.stopTest();
+    }
+
+    @isTest 
+    static void testHandleProspectSOSLSearch_NoResult(){
+        //set fixed empty search result
+        Id [] fixedSearchResult = new id[0];
+        Test.setFixedSearchResults(fixedSearchResult);
+
+        //start test
+        Test.startTest();
+        ProspectSOSLSearch.handleProspectSOSLSearch('NonExistentSearchTerm');
+        Test.stopTest();
+    }
+
+    @isTest 
+    static void testHandleProspectSOSLSearch_NoProspectResult(){
+        //set up test data with no result for Prospect object but result for other objects(e.g Account, Case)
+        Account acc = new Account();
+        acc.Name = 'Test Account';
+        acc.Industry = 'Test Industry';
+
+        insert acc;
+        
+        Id [] fixedSearchResults =  new Id[1];
+        fixedSearchResults[0] = acc.Id;
+        Test.setFixedSearchResults(fixedSearchResults);
+
+        //start test
+        Test.startTest();
+        ProspectSOSLSearch.handleProspectSOSLSearch('Test');
         Test.stopTest();
 
-        //Assert
-        Assert.areEqual(expected, actual, msg)
+        
     }
+
 }

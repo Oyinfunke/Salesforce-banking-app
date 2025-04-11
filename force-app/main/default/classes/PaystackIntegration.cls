@@ -1,13 +1,30 @@
 public class PaystackIntegration implements Queueable, Database.AllowsCallouts {
 
     /**
-     * Executes the queueable job to sync Customer records with Paystack
+     * Executes the queueable job to sync Customer records in SF org with Paystack and vice versa
+     * Create Boolean class variable to control which operation occurs
+     * Create constructor methods (overload) to decide operation that gets executed
      * 1. Fetches unsynced customer records from the org
      * 2. Retrieves Paystack API configuration
      * 3. Creates customers on Paystack via API
      * 4. Updates org records with Paystack Customer IDs
      */
-    public void execute(QueueableContext qc) {
+    
+    private Boolean updatePaystackRec;
+    private Boolean updateSFRec;
+
+    //set up constructors to decide which operation executes
+    private void PaystackIntegration (Boolean updatePS, Boolean updateSF){
+        this.updatePaystackRec = updatePS;
+        this.updateSFRec = updateSF;
+    }
+
+    //Default constructor update/syn both platforms simultaneously
+    private void PaystackIntegration (){
+        this(true, true);
+    }
+
+     public void execute(QueueableContext qc) {
         // Fetch unsynced customer records from org
         List<Customer__c> unsynedCust = fetchUnsynedCust();
         if(unsynedCust.isEmpty()) {
